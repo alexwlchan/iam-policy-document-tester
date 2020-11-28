@@ -4,8 +4,6 @@ import secrets
 import time
 
 import boto3
-from botocore.exceptions import ClientError
-from tenacity import retry, stop_after_delay, wait_fixed
 
 
 ACCOUNT_ID = "975596993436"
@@ -155,53 +153,30 @@ def temporary_iam_credentials(*, admin_role_arn, policy_document):
         PolicyDocument=json.dumps(policy_document),
     )
 
-    # IAM updates don't apply instantaneously, and there may be a short delay
-    # before we can assume the new role.  Keep retrying for up to 15 seconds,
-    # and if we still haven't got credentials by then, give up.
-    #
-    # If you don't wait, you may get an error:
-    #
-    #       botocore.exceptions.ClientError: An error occurred (InvalidAccessKeyId)
-    #       when calling the DeleteObject operation: The AWS Access Key Id you
-    #       provided does not exist in our records.
-    #
-    @retry(stop=stop_after_delay(15), wait=wait_fixed(1))
-    def _get_credentials(sts_client, *, role_arn):
-        assumed_role_credentials = sts_client.assume_role(
-            RoleArn=role_arn, RoleSessionName="AssumeRoleSession2"
-        )
-        credentials = assumed_role_credentials["Credentials"]
-
-        # The only way to know if the credentials work is to use them to sign
-        # a request, and see what happens.  Using the DescribeRegions method
-        # is a good way to see if our credentials are active yet.
-        # See https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/ec2.html?highlight=regions#EC2.Client.describe_regions
-        ec2_client = create_aws_client_from_credentials("ec2", credentials=credentials)
-
-        # Even a single DryRunOperation error isn't proof that the credentials
-        # are working -- wait for five in a row.  I don't know exactly how
-        # flaky this is, but waiting for three in a row wasn't enough to squash
-        for _ in range(5):
-            try:
-                ec2_client.describe_regions(DryRun=True)
-            except ClientError as err:
-                if err.response["Error"]["Code"] == "DryRunOperation":
-                    pass
-                else:
-                    raise
-
-        # It's still flaky, even if we wait this long.  Sleep another10 seconds
-        # just to be sure.
-        time.sleep(10)
-
-        return credentials
-
     sts_client = create_aws_client_from_role_arn("sts", role_arn=admin_role_arn)
 
     # Handle the credentials to the caller.  Regardless of whether the calling
     # code succeeds or throws an exception, make sure we clean up the temporary role.
     try:
-        yield _get_credentials(sts_client, role_arn=temporary_role_arn)
+        # IAM updates don't apply instantaneously, and there may be a short delay
+        # before we can assume the new role.  Even a successful call may be followed
+        # by a failed call as everything sorts itself out.
+        #
+        # If you don't wait, you may get an error:
+        #
+        #       botocore.exceptions.ClientError: An error occurred (InvalidAccessKeyId)
+        #       when calling the [Operation] operation: The AWS Access Key Id you
+        #       provided does not exist in our records.
+        #
+        # This shouldn't be running in a hot path -- it's a tool for experimenting --
+        # so wait 15 seconds before retrieving credentials.
+        time.sleep(15)
+
+        assumed_role_credentials = sts_client.assume_role(
+            RoleArn=temporary_role_arn, RoleSessionName="AssumeRoleSession1"
+        )
+
+        yield assumed_role_credentials["Credentials"]
     finally:
         iam_client.delete_role_policy(
             RoleName=admin_role_name, PolicyName=admin_policy_name
