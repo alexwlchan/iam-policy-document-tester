@@ -41,22 +41,6 @@ def create_aws_client_from_credentials(resource, *, credentials):
     )
 
 
-def create_dynamo_client_from_role_arn(*, role_arn):
-    """
-    Create a DynamoDB client using the given role.
-    """
-    assumed_role_object = sts_client.assume_role(
-        RoleArn=role_arn, RoleSessionName="AssumeRoleSession1"
-    )
-    credentials = assumed_role_object["Credentials"]
-    return boto3.resource(
-        "dynamodb",
-        aws_access_key_id=credentials["AccessKeyId"],
-        aws_secret_access_key=credentials["SecretAccessKey"],
-        aws_session_token=credentials["SessionToken"],
-    ).meta.client
-
-
 def get_underlying_role_arn():
     """
     Returns the original role ARN.
