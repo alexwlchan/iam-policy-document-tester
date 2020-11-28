@@ -97,7 +97,7 @@ def _temporary_role(admin_role_arn):
     # Name for the temporary role.  Role names must be between 1 and 64 chars
     # long, and case insensitive.
     # See https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreateRole.html
-    temporary_role_name = dt.datetime.now().strftime("temporary_%Y-%m-%d_%H-%M-%S")
+    temporary_role_name = dt.datetime.now().strftime("temporary_role_%Y-%m-%d_%H-%M-%S")
 
     # Create the temporary role.  This policy document describes who is allowed
     # to assume this role -- since this is a temporary role only meant to be
@@ -123,6 +123,28 @@ def _temporary_role(admin_role_arn):
         yield (create_role_resp["Role"]["Arn"], temporary_role_name)
     finally:
         iam_client.delete_role(RoleName=temporary_role_name)
+
+
+@contextlib.contextmanager
+def _temporary_role_policy(iam_client, *, role_name, policy_document):
+    """
+    Temporarily attach a policy document as an inline policy to an IAM role.
+    """
+    temporary_policy_name = dt.datetime.now().strftime(
+        "temporary_policy_%Y-%m-%d_%H-%M-%S"
+    )
+
+    try:
+        iam_client.put_role_policy(
+            RoleName=role_name,
+            PolicyName=temporary_policy_name,
+            PolicyDocument=json.dumps(policy_document),
+        )
+
+        yield
+    finally:
+        iam_client.delete_role_policy(RoleName=role_name, PolicyName=temporary_policy_name)
+
 
 
 @contextlib.contextmanager
@@ -152,59 +174,46 @@ def temporary_iam_credentials(*, admin_role_arn, policy_document):
     iam_client = create_aws_client_from_role_arn("iam", role_arn=admin_role_arn)
 
     with _temporary_role(admin_role_arn) as (temporary_role_arn, temporary_role_name):
-        # Now attach the policy to the temporary role.  Note that we add permission
-        # to use the DescribeRegions permission, which we'll use to validate our
-        # credentials (see below).
-        temporary_policy_name = f"policy-{secrets.token_hex(6)}"
 
-        policy_document["Statement"].append(
-            {
-                "Sid": "",
-                "Effect": "Allow",
-                "Action": ["ec2:DescribeRegions"],
-                "Resource": ["*"],
+        with contextlib.ExitStack() as es:
+
+            # Attach the policy document we want to test to the temporary role.
+            es.enter_context(_temporary_role_policy(
+                iam_client,
+                role_name=temporary_role_name,
+                policy_document=policy_document
+            ))
+
+            # Allowing the admin role to assume the temporary role needs symmetric
+            # IAM permissions:
+            #
+            #   * The temporary role needs a rule "the admin role can assume me"
+            #   * The admin role needs a rule "I can assume the temporary role"
+            #
+            # We created the first rule with the AssumeRolePolicyDocument parameter on
+            # the temporary role; now add the second rule on the admin role.
+            admin_role_name = admin_role_arn.split("/")[-1]
+            admin_policy_name = f"assume-{temporary_role_name}"
+
+            assume_role_policy_document = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Action": "sts:AssumeRole",
+                        "Resource": temporary_role_arn,
+                        "Effect": "Allow",
+                    }
+                ],
             }
-        )
 
-        iam_client.put_role_policy(
-            RoleName=temporary_role_name,
-            PolicyName=temporary_policy_name,
-            PolicyDocument=json.dumps(policy_document),
-        )
+            es.enter_context(_temporary_role_policy(
+                iam_client,
+                role_name=admin_role_name,
+                policy_document=assume_role_policy_document
+            ))
 
-        # Allowing the admin role to assume the temporary role needs symmetric
-        # IAM permissions:
-        #
-        #   * The temporary role needs a rule "the admin role can assume me"
-        #   * The admin role needs a rule "I can assume the temporary role"
-        #
-        # We created the first rule with the AssumeRolePolicyDocument parameter on
-        # the temporary role; now add the second rule on the admin role.
-        admin_role_name = admin_role_arn.split("/")[-1]
-        admin_policy_name = f"assume-{temporary_role_name}"
+            sts_client = create_aws_client_from_role_arn("sts", role_arn=admin_role_arn)
 
-        policy_document = {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Action": "sts:AssumeRole",
-                    "Resource": temporary_role_arn,
-                    "Effect": "Allow",
-                }
-            ],
-        }
-
-        iam_client.put_role_policy(
-            RoleName=admin_role_name,
-            PolicyName=admin_policy_name,
-            PolicyDocument=json.dumps(policy_document),
-        )
-
-        sts_client = create_aws_client_from_role_arn("sts", role_arn=admin_role_arn)
-
-        # Handle the credentials to the caller.  Regardless of whether the calling
-        # code succeeds or throws an exception, make sure we clean up the temporary role.
-        try:
             # IAM updates don't apply instantaneously, and there may be a short delay
             # before we can assume the new role.  Even a successful call may be followed
             # by a failed call as everything sorts itself out.
@@ -224,10 +233,3 @@ def temporary_iam_credentials(*, admin_role_arn, policy_document):
             )
 
             yield assumed_role_credentials["Credentials"]
-        finally:
-            iam_client.delete_role_policy(
-                RoleName=admin_role_name, PolicyName=admin_policy_name
-            )
-            iam_client.delete_role_policy(
-                RoleName=temporary_role_name, PolicyName=temporary_policy_name
-            )
