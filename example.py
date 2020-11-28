@@ -24,10 +24,14 @@ if __name__ == "__main__":
         ],
     }
 
-    with temporary_iam_credentials(admin_role_arn=admin_role_arn, policy_document=policy_document) as credentials:
+    with temporary_iam_credentials(
+        admin_role_arn=admin_role_arn, policy_document=policy_document
+    ) as credentials:
         s3_client = create_aws_client_from_credentials("s3", credentials=credentials)
 
-        # We can list objects in any bucket except platform-infra.
+        # Check that we can list objects in any bucket except platform-infra.
+        # By default, the admin role can list *anything* in the platform account,
+        # so if we're not using the new role, the second call would succeed.
         s3_client.list_objects_v2(Bucket="wellcomecollection-platform-dashboard")
 
         try:
