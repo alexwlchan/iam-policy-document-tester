@@ -2,7 +2,7 @@
 
 **Create short-lived, temporary roles for experimenting with AWS IAM policy documents.**
 
-This is a Python function for rapidly test and experimenting with AWS IAM policy documents.
+This is a Python function for rapidly testing and experimenting with AWS IAM policy documents.
 Here's what it looks like:
 
 ```python
