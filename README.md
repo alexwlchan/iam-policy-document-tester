@@ -44,7 +44,10 @@ The function `temporary_iam_credentials()` will give me a set of temporary AWS c
 I can make the API calls I want to test and check they behave correctly.
 It does this by creating a temporary IAM role, which is cleaned up afterwards.
 
-**Epistemic status:** lightly tested, shared as an interesting experiment rather than something you should rely on in production.
+This dramatically speeds up the flow for developing IAM policy documents.
+It gives me a fast write-test-debug loop for making changes; much faster than if I was using a more full-featured deployment tool like Terraform or CloudFormation.
+
+**Epistemic status:** lightly tested, shared as an interesting experiment rather than something you should rely on.
 
 
 
