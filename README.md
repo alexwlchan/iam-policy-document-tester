@@ -13,12 +13,18 @@ with temporary_iam_credentials(admin_role_arn, policy_document) as credentials:
 
 The function `temporary_iam_credentials()` gives you a set of temporary AWS credentials, which have the permissions defined by the IAM policy document.
 You can make API calls using those credentials, and check they behave correctly -- that API calls are allowed or denied as appropriate.
-When you're done, it cleans up after itself, so there are no temporary roles or users left hanging around in your account.
 
-This dramatically speeds up the flow for developing IAM policy documents.
-It gives me a fast write-test-debug loop for making changes; much faster than if I was using a more full-featured deployment tool like Terraform or CloudFormation.
+When you're done, it cleans up after itself, so there are no temporary resources left hanging around in your account.
 
-**Epistemic status:** lightly tested, shared as an interesting experiment rather than something you should rely on.
+I use this in two ways:
+
+*   To dramatically speed up the flow for developing IAM policy documents.
+    It gives me a fast write-test-debug loop for making changes; much faster than if I was using a more full-featured deployment tool like Terraform or CloudFormation.
+    
+*   To temporarily downgrade permissions when doing something potentially risky.
+    If I have an admin role, I can create more tightly-scoped credentials to act as an extra guard rail.
+    (This is why I wrote the code -- more on that below.)
+
 
 
 ## How does it work?
@@ -29,7 +35,7 @@ The function creates a temporary IAM role, and attaches your policy document as 
 Then it gives your admin role permission to assume the temporary role, assumes it, and gets some credentials using STS.
 It hands back those credentials for you to use.
 
-When you're done, it cleans up the temporary role, so there's nothing left hanging around in your account.
+When you're done, it cleans up the temporary role and associated policies, so there's nothing left hanging around in your account.
 
 
 
@@ -38,7 +44,7 @@ When you're done, it cleans up the temporary role, so there's nothing left hangi
 Here are some of the interesting things I learnt while writing this code:
 
 *   **Context managers are great for temporary resources.**
-    Context managers are a useful Python feature that let you create a resource, and ensure it gets cleaned up afterwards.
+    Context managers are a Python feature that let you create a resource, and ensure it gets cleaned up afterwards.
     An example you've probably used is the `open` function for files:
 
     ```python
@@ -92,12 +98,11 @@ Here are some of the interesting things I learnt while writing this code:
     In particular:
     
     *    There's a delay between creating a role and being able to assume it
-    *    There's a delay between creating a role, and credentials that use that role being usable.
+    *    There's a delay between creating a role, and credentials that use that role being usable
     
-    I have a hard-coded 15 second delay in my script, because that's what it took in my testing.
-    This code is meant for experiments or one-off actions, not somethign you should rely on in production.
+    I have a hard-coded 15 second delay in my function, because that's what worked in my testing.
 
-    These delays aren't a surprise -- IAM is a global, distributed system, and changes won't propagate instantly -- but it's the first time I've encountered it, because I don't usually create roles and immediately try to use them.
+    These delays shouldn't be surprising -- IAM is a global, distributed system, and changes won't propagate instantly -- but it's the first time I've encountered them, because I don't usually create a role and immediately try to use it.
 
 *   **You can use EC2's [DescribeRegions API](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeRegions.html) to test IAM credentials.**
     The API call has a `DryRun` flag, which tells you if the request was authorised without actually making it, and I saw several examples that suggested using it.
@@ -118,11 +123,11 @@ Although the latter two roles can usually do almost anything in an account, we h
 
 However, sometimes we do want to delete objects -- for example, objects that were stored in the wrong place.
 
-When weI do this, I don't want to remove the blanket "Deny" rule, because that puts the archive at higher risk -- including objects that I don't want to change.
-Instead, I wanted to create a fine-grained rule that said *"let us delete these three objects, but nothing else"*.
+When we do this, I don't want to remove the blanket "Deny" rule, because that puts the archive at risk -- objects that I don't want to change are now vulnerable to an errant DeleteObject call.
+Instead, I wanted to create a fine-grained rule that said *"let me delete these three objects, but nothing else"*.
 
 A "Deny" always beats an "Allow" in an IAM policy document, so I can't modify our developer roles to give us these permissions -- instead, I wrote this function to create a *temporary* role with these permissions, which we could then assume to run the deletion.
-There's less risk of accidentally deleting something that we weren't planning to delete, because there shouldn't be an IAM policy that allows its deletion.
+There's less risk of accidentally deleting something that we weren't planning to delete, because there shouldn't be an IAM policy anywhere that allows its deletion.
 
 It's not until I finished that I realised this could be more general-purpose, and used to experiment with IAM policy documents.
 
@@ -130,9 +135,10 @@ It's not until I finished that I realised this could be more general-purpose, an
 
 ## Usage: how can somebody else use this?
 
-Read the code in [iam_tester.py](iam_tester.py), then the working example in [example.py](example.py).
+Read the code in [iam_tester.py](iam_tester.py), then look at the worked example in [example.py](example.py).
+Hopefully there's enough there to get started.
 
-There are probably some hidden assumptions about how we use IAM roles at Wellcome, but you might get it working.
+You need an IAM role with administrator access (in particular, one that can create, update and destroy IAM roles).
 
 
 
