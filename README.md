@@ -2,52 +2,34 @@
 
 **Create short-lived, temporary roles for experimenting with AWS IAM policy documents.**
 
-This is a Python function I wrote that lets you rapidly test and experiment with AWS IAM policy documents.
-It's best illustrated with an example:
+This is a Python function for rapidly test and experimenting with AWS IAM policy documents.
+Here's what it looks like:
 
 ```python
-from iam_tester import (
-    create_aws_client_from_credentials,
-    temporary_iam_credentials
-)
-
-
-admin_role_arn = "arn:aws:iam::1234567890:role/administrator"
-
-policy_document = {
-    "Version": "2012-10-17",
-    "Statement": [
-        {
-            "Effect": "Allow",
-            "Action": "s3:List*",
-            "Resource": "*"
-        },
-        {
-            "Effect": "Deny",
-            "Action": "s3:List*",
-            "Resource": "arn:aws:s3:::my-sekrit-bucket"
-        },
-    ],
-}
-
 with temporary_iam_credentials(admin_role_arn, policy_document) as credentials:
-    s3_client = create_aws_client_from_credentials("s3", credentials=credentials)
-
-    # try to list the contents of an S3 bucket, check it's allowed
-    # try to list the contents of sekrit-bucket, check it's not allowed
+    # Do stuff with your new credentials, which have the permissions defined by the
+    # IAM policy document.
 ```
 
-I have an IAM policy document that I'd like to test.
-In this example, I want to give somebody permissions to list everything in S3 *except* in a secret bucket.
-
-The function `temporary_iam_credentials()` will give me a set of temporary AWS credentials (access key, secret key and session ID) which have the same permissions as the IAM policy document.
-I can make the API calls I want to test and check they behave correctly.
-It does this by creating a temporary IAM role, which is cleaned up afterwards.
+The function `temporary_iam_credentials()` gives you a set of temporary AWS credentials, which have the permissions defined by the IAM policy document.
+You can make API calls using those credentials, and check they behave correctly -- that API calls are allowed or denied as appropriate.
+When you're done, it cleans up after itself, so there are no temporary roles or users left hanging around in your account.
 
 This dramatically speeds up the flow for developing IAM policy documents.
 It gives me a fast write-test-debug loop for making changes; much faster than if I was using a more full-featured deployment tool like Terraform or CloudFormation.
 
 **Epistemic status:** lightly tested, shared as an interesting experiment rather than something you should rely on.
+
+
+## How does it work?
+
+The function creates a temporary IAM role, and attaches your policy document as an inline policy.
+(I considered creating a temporary IAM user, but roles have [a 5x limit on the size of inline policies](https://aws.amazon.com/premiumsupport/knowledge-center/iam-increase-policy-size/).)
+
+Then it gives your admin role permission to assume the temporary role, assumes it, and gets some credentials using STS.
+It hands back those credentials for you to use.
+
+When you're done, it cleans up the temporary role, so there's nothing left hanging around in your account.
 
 
 
@@ -67,7 +49,7 @@ Here are some of the interesting things I learnt while writing this code:
     The file will be closed when you're done, even if an exception is thrown inside the `with` block.
 
     I'm using [contextlib.contextmanager](https://docs.python.org/3/library/contextlib.html#contextlib.contextmanager) to create a couple of my own context managers for temporary IAM resources, so those resources can always be cleaned up afterwards.
-    It looks something like:
+    It goes something like:
 
     ```python
     import contextlib
