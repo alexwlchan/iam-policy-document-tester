@@ -126,8 +126,12 @@ However, sometimes we do want to delete objects -- for example, objects that wer
 When we do this, I don't want to remove the blanket "Deny" rule, because that puts the archive at risk -- objects that I don't want to change are now vulnerable to an errant DeleteObject call.
 Instead, I wanted to create a fine-grained rule that said *"let me delete these three objects, but nothing else"*.
 
-A "Deny" always beats an "Allow" in an IAM policy document, so I can't modify our developer roles to give us these permissions -- instead, I wrote this function to create a *temporary* role with these permissions, which we could then assume to run the deletion.
+A "Deny" always beats an "Allow" in an IAM policy document, so I can't modify our developer roles to give us these permissions -- but that developer role can create new IAM roles with arbitrary permissions!
+I wrote this function to create a *temporary* role with these permissions, which we could then assume to run the deletion.
 There's less risk of accidentally deleting something that we weren't planning to delete, because there shouldn't be an IAM policy anywhere that allows its deletion.
+
+(We trust each other to use the *"create a role that can do anything"* permission responsibly.
+The blanket "Deny" in the roles we use day-to-day is about preventing careless mistakes, not preventing us from ever deleting something.)
 
 It's not until I finished that I realised this could be more general-purpose, and used to experiment with IAM policy documents.
 
