@@ -26,7 +26,7 @@ I use this in two ways:
     This is why I originally wrote the code: I had an admin role that had blanket "Deny" permissions (on an important S3 bucket), but had full IAM permissions, and so could create new roles with arbitrary permissions.
     I used this function to create a temporary set of credentials which only had permission to delete specific objects, minimising the risk that I'd inadvertently delete the wrong thing.
     
-    If you want to select a subset of the permissions you already have (rather than creating a brand new set of permissions), consider using IAM session policies.
+    If you want to select a subset of the permissions in a role you already have (rather than creating a brand new role/permissions set), consider using IAM session policies.
     You can apply a policy document when you call AssumeRole, and that policy applies for the duration of your session.
     (hat tip [Ben Kehoe](https://twitter.com/ben11kehoe/status/1333885761347731456))
 
