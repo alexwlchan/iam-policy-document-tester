@@ -24,7 +24,7 @@ I use this in two ways:
 *   To temporarily downgrade permissions when doing something potentially risky.
     If I have an admin role, I can create more tightly-scoped credentials to act as an extra guard rail.
     
-    This is why I originally wrote the code: I had an admin role that had blanket "Deny" permissions (on an important S3 bucket), but had full IAM permissions, and create a new user with fine-grained permissions to delete specific objects in the bucket.
+    This is why I originally wrote the code: I had an admin role that had blanket "Deny" permissions (on an important S3 bucket), but had full IAM permissions, and so could create a new user with fine-grained permissions to delete specific objects in the bucket.
     I used this function to create a temporary set of credentials for deleting the objects, minimising the risk that I'd inadvertently delete the wrong thing.
 
 
