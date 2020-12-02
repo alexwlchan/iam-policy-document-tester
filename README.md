@@ -21,11 +21,14 @@ I use this in two ways:
 *   To dramatically speed up the flow for developing IAM policy documents.
     It gives me a fast write-test-debug loop for making changes; much faster than if I was using a more full-featured deployment tool like Terraform or CloudFormation.
     
-*   To temporarily downgrade permissions when doing something potentially risky.
-    If I have an admin role, I can create more tightly-scoped credentials to act as an extra guard rail.
+*   To create a temporary set of tightly-scoped permissions for a risky operation, which act as an extra guard rail.
     
     This is why I originally wrote the code: I had an admin role that had blanket "Deny" permissions (on an important S3 bucket), but had full IAM permissions, and so could create new roles with arbitrary permissions.
     I used this function to create a temporary set of credentials which only had permission to delete specific objects, minimising the risk that I'd inadvertently delete the wrong thing.
+    
+    If you want to select a subset of the permissions you already have (rather than creating a brand new set of permissions), consider using IAM session policies.
+    You can apply a policy document when you call AssumeRole, and that policy applies for the duration of your session.
+    (hat tip [Ben Kehoe](https://twitter.com/ben11kehoe/status/1333885761347731456))
 
 
 
